@@ -34,7 +34,7 @@
 #define MODE_READ 0
 #define MODE_WRITE 1
 
-inline static int test_bit_set_bit(unsigned char *buf, uint64_t x, int mode) {
+inline static int set_bit(unsigned char *buf, uint64_t x) {
     uint64_t byte = x >> 3;
     uint8_t mask = 1 << (x & 0x7);
     uint8_t c = buf[byte]; // expensive memory access
@@ -42,13 +42,16 @@ inline static int test_bit_set_bit(unsigned char *buf, uint64_t x, int mode) {
     if (c & mask) {
         return 1;
     } else {
-        if (mode == MODE_WRITE) {
-            buf[byte] = c | mask;
-        }
+        buf[byte] = c | mask;
         return 0;
     }
 }
 
+inline static int test_bit(unsigned char *buf, uint64_t x) {
+    uint64_t byte = x >> 3;
+    uint8_t mask = 1 << (x & 0x7);
+    return buf[byte] & mask;
+}
 bloom_hashval bloom_calc_hash(const void *buffer, int len) {
     bloom_hashval rv;
     rv.a = murmurhash2(buffer, len, 0x9747b28c);
@@ -71,32 +74,38 @@ bloom_hashval bloom_calc_hash64(const void *buffer, int len) {
 //
 // modExp is the expression which will evaluate to the number of bits in the
 // filter.
-#define CHECK_ADD_FUNC(T, modExp)                                                                  \
+#define CHECK_FUNC(T, modExp)                                                                  \
+    T i;                                                                                           \
+    const register T mod = modExp;                                                                 \
+    for (i = 0; i < bloom->hashes; i++) {                                                          \
+        T x = ((hashval.a + i * hashval.b)) % mod;                                                 \
+        if (!test_bit_set_bit(bloom->bf, x)) {                                                     \
+            return 0;                                                                              \
+        }                                                                                          \
+    }                                                                                              \
+    return 1;                                                                                      \
+
+#define ADD_FUNC(T, modExp)                                                                  \
     T i;                                                                                           \
     int found_unset = 0;                                                                           \
     const register T mod = modExp;                                                                 \
     for (i = 0; i < bloom->hashes; i++) {                                                          \
         T x = ((hashval.a + i * hashval.b)) % mod;                                                 \
-        if (!test_bit_set_bit(bloom->bf, x, mode)) {                                               \
-            if (mode == MODE_READ) {                                                               \
-                return 0;                                                                          \
-            }                                                                                      \
+        if (!set_bit(bloom->bf, x)) {                                               \
             found_unset = 1;                                                                       \
         }                                                                                          \
     }                                                                                              \
-    if (mode == MODE_READ) {                                                                       \
-        return 1;                                                                                  \
-    }                                                                                              \
     return found_unset;
 
-static int bloom_check_add32(struct bloom *bloom, bloom_hashval hashval, int mode) {
+
+static int bloom_check64(const struct bloom *bloom, bloom_hashval hashval, int mode) {
     assert(bloom->bits);
-    CHECK_ADD_FUNC(uint32_t, (bloom->bits));
+    CHECK_FUNC(uint64_t, (bloom->bits));
 }
 
-static int bloom_check_add64(struct bloom *bloom, bloom_hashval hashval, int mode) {
+static int bloom_add64(struct bloom *bloom, bloom_hashval hashval, int mode) {
     assert(bloom->bits);
-    CHECK_ADD_FUNC(uint64_t, (bloom->bits));
+    ADD_FUNC(uint64_t, (bloom->bits));
 }
 
 static double calc_bpe(double error) {
@@ -165,7 +174,7 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
         bloom->bytes = bits / 8;
     }
 
-    bloom->force64 = (options & BLOOM_OPT_FORCE64);
+    bloom->force64 = BLOOM_OPT_FORCE64;
     bloom->hashes = (int)ceil(0.693147180559945 * bloom->bpe); // ln(2)
     bloom->bf = (unsigned char *)BLOOM_CALLOC(bloom->bytes, sizeof(unsigned char));
     if (bloom->bf == NULL) {
@@ -176,11 +185,7 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
 }
 
 int bloom_check_h(const struct bloom *bloom, bloom_hashval hash) {
-    if (bloom->force64 || bloom->n2 > 31) {
-        return bloom_check_add64((void *)bloom, hash, MODE_READ);
-    }
-
-    return bloom_check_add32((void *)bloom, hash, MODE_READ);
+    return bloom_check64((void *)bloom, hash);
 }
 
 int bloom_check(const struct bloom *bloom, const void *buffer, int len) {
@@ -188,11 +193,7 @@ int bloom_check(const struct bloom *bloom, const void *buffer, int len) {
 }
 
 int bloom_add_h(struct bloom *bloom, bloom_hashval hash) {
-    if (bloom->force64 || bloom->n2 > 31) {
-        return !bloom_check_add64(bloom, hash, MODE_WRITE);
-    }
-
-    return !bloom_check_add32(bloom, hash, MODE_WRITE);
+    return !bloom_add64(bloom, hash);
 }
 
 int bloom_add(struct bloom *bloom, const void *buffer, int len) {
