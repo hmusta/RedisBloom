@@ -36,7 +36,7 @@
 
 inline static int test_bit_set_bit(unsigned char *buf, uint64_t x, int mode) {
     uint64_t byte = x >> 3;
-    uint8_t mask = 1 << (x % 8);
+    uint8_t mask = 1 << (x & 0x7);
     uint8_t c = buf[byte]; // expensive memory access
 
     if (c & mask) {
