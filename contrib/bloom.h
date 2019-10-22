@@ -31,7 +31,7 @@ struct bloom {
 
     unsigned char *bf;
     size_t bytes;
-    uint32_t bits;
+    uint64_t bits;
 };
 
 /** ***************************************************************************

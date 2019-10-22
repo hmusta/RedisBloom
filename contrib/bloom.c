@@ -125,12 +125,11 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
     }
 
     bloom->error = error;
-    bloom->bits = 0;
+    bloom->bits = 1;
     bloom->entries = entries;
     bloom->bpe = calc_bpe(error);
 
     double dentries = (double)entries;
-    uint64_t bits;
 
     if (options & BLOOM_OPT_ENTS_IS_BITS) {
         // Size is determined by the number of bits
@@ -139,12 +138,12 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
         }
 
         bloom->n2 = entries;
-        bits = bloom->bits = 1LLU << bloom->n2;
-        dentries = entries = bloom->entries = bits / bloom->bpe;
+        bloom->bits <<= bloom->n2;
+        dentries = entries = bloom->entries = bloom->bits / bloom->bpe;
 
     } else if (options & BLOOM_OPT_NOROUND) {
         // Don't perform any rounding. Conserve memory instead
-        bits = bloom->bits = (uint64_t)(dentries * bloom->bpe);
+        bloom->bits = (uint64_t)(dentries * bloom->bpe);
         bloom->n2 = 0;
 
     } else {
@@ -153,31 +152,27 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
             return 1;
         }
         bloom->n2 = bn2 + 1;
-        bits = bloom->bits = 1LLU << bloom->n2;
+        bloom->bits <<= bloom->n2;
 
         // Determine the number of extra bits available for more items. We rounded
         // up the number of bits to the next-highest power of two. This means we
         // might have up to 2x the bits available to us.
-        size_t bitDiff = bits - (dentries * bloom->bpe);
+        size_t bitDiff = bloom->bits - (dentries * bloom->bpe);
         // The number of additional items we can store is the extra number of bits
         // divided by bits-per-element
         size_t itemDiff = bitDiff / bloom->bpe;
         bloom->entries += itemDiff;
     }
 
-    if (!bloom->bits)
-        return 1;
-
-    if (bits % 8) {
-        bloom->bytes = (bits / 8) + 1;
-    } else {
-        bloom->bytes = bits / 8;
-    }
+    assert(bloom->bits);
+    bloom->bytes = (bloom->bits + 7) >> 3;
+    assert(bloom->bytes);
 
     bloom->force64 = BLOOM_OPT_FORCE64;
     bloom->hashes = (int)ceil(0.693147180559945 * bloom->bpe); // ln(2)
     bloom->bf = (unsigned char *)BLOOM_CALLOC(bloom->bytes, sizeof(unsigned char));
     if (bloom->bf == NULL) {
+        printf("Failed to allocate filter\n");
         return 1;
     }
 
