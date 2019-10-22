@@ -98,12 +98,12 @@ bloom_hashval bloom_calc_hash64(const void *buffer, int len) {
     return found_unset;
 
 
-static int bloom_check64(const struct bloom *bloom, bloom_hashval hashval, int mode) {
+static int bloom_check64(const struct bloom *bloom, bloom_hashval hashval) {
     assert(bloom->bits);
     CHECK_FUNC(uint64_t, (bloom->bits));
 }
 
-static int bloom_add64(struct bloom *bloom, bloom_hashval hashval, int mode) {
+static int bloom_add64(struct bloom *bloom, bloom_hashval hashval) {
     assert(bloom->bits);
     ADD_FUNC(uint64_t, (bloom->bits));
 }
@@ -164,7 +164,7 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
         size_t itemDiff = bitDiff / bloom->bpe;
         bloom->entries += itemDiff;
     }
-    
+
     if (!bloom->bits)
         return 1;
 
