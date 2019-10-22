@@ -74,24 +74,24 @@ bloom_hashval bloom_calc_hash64(const void *buffer, int len) {
 //
 // modExp is the expression which will evaluate to the number of bits in the
 // filter.
-#define CHECK_FUNC(T, modExp)                                                                  \
+#define CHECK_FUNC(T, modExp)                                                                      \
     T i;                                                                                           \
     const register T mod = modExp;                                                                 \
     for (i = 0; i < bloom->hashes; i++) {                                                          \
         T x = ((hashval.a + i * hashval.b)) % mod;                                                 \
-        if (!test_bit_set_bit(bloom->bf, x)) {                                                     \
+        if (!test_bit(bloom->bf, x)) {                                                             \
             return 0;                                                                              \
         }                                                                                          \
     }                                                                                              \
     return 1;                                                                                      \
 
-#define ADD_FUNC(T, modExp)                                                                  \
+#define ADD_FUNC(T, modExp)                                                                        \
     T i;                                                                                           \
     int found_unset = 0;                                                                           \
     const register T mod = modExp;                                                                 \
     for (i = 0; i < bloom->hashes; i++) {                                                          \
         T x = ((hashval.a + i * hashval.b)) % mod;                                                 \
-        if (!set_bit(bloom->bf, x)) {                                               \
+        if (!set_bit(bloom->bf, x)) {                                                              \
             found_unset = 1;                                                                       \
         }                                                                                          \
     }                                                                                              \
