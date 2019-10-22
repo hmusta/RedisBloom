@@ -90,18 +90,13 @@ bloom_hashval bloom_calc_hash64(const void *buffer, int len) {
     return found_unset;
 
 static int bloom_check_add32(struct bloom *bloom, bloom_hashval hashval, int mode) {
-    CHECK_ADD_FUNC(uint32_t, (1 << bloom->n2));
+    assert(bloom->bits);
+    CHECK_ADD_FUNC(uint32_t, (bloom->bits));
 }
 
 static int bloom_check_add64(struct bloom *bloom, bloom_hashval hashval, int mode) {
-    CHECK_ADD_FUNC(uint64_t, (1LLU << bloom->n2));
-}
-
-// This function is used for older bloom filters whose bit count was not
-// 1 << X. This function is a bit slower, and isn't exposed in the API
-// directly because it's deprecated
-static int bloom_check_add_compat(struct bloom *bloom, bloom_hashval hashval, int mode) {
-    CHECK_ADD_FUNC(uint64_t, bloom->bits)
+    assert(bloom->bits);
+    CHECK_ADD_FUNC(uint64_t, (bloom->bits));
 }
 
 static double calc_bpe(double error) {
@@ -135,7 +130,7 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
         }
 
         bloom->n2 = entries;
-        bits = 1LLU << bloom->n2;
+        bits = bloom->bits = 1LLU << bloom->n2;
         dentries = entries = bloom->entries = bits / bloom->bpe;
 
     } else if (options & BLOOM_OPT_NOROUND) {
@@ -149,7 +144,7 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
             return 1;
         }
         bloom->n2 = bn2 + 1;
-        bits = 1LLU << bloom->n2;
+        bits = bloom->bits = 1LLU << bloom->n2;
 
         // Determine the number of extra bits available for more items. We rounded
         // up the number of bits to the next-highest power of two. This means we
@@ -160,6 +155,9 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
         size_t itemDiff = bitDiff / bloom->bpe;
         bloom->entries += itemDiff;
     }
+    
+    if (!bloom->bits)
+        return 1;
 
     if (bits % 8) {
         bloom->bytes = (bits / 8) + 1;
@@ -180,11 +178,9 @@ int bloom_init(struct bloom *bloom, unsigned entries, double error, unsigned opt
 int bloom_check_h(const struct bloom *bloom, bloom_hashval hash) {
     if (bloom->force64 || bloom->n2 > 31) {
         return bloom_check_add64((void *)bloom, hash, MODE_READ);
-    } else if (bloom->n2 > 0) {
-        return bloom_check_add32((void *)bloom, hash, MODE_READ);
-    } else {
-        return bloom_check_add_compat((void *)bloom, hash, MODE_READ);
     }
+
+    return bloom_check_add32((void *)bloom, hash, MODE_READ);
 }
 
 int bloom_check(const struct bloom *bloom, const void *buffer, int len) {
@@ -194,11 +190,9 @@ int bloom_check(const struct bloom *bloom, const void *buffer, int len) {
 int bloom_add_h(struct bloom *bloom, bloom_hashval hash) {
     if (bloom->force64 || bloom->n2 > 31) {
         return !bloom_check_add64(bloom, hash, MODE_WRITE);
-    } else if (bloom->n2) {
-        return !bloom_check_add32(bloom, hash, MODE_WRITE);
-    } else {
-        return !bloom_check_add_compat(bloom, hash, MODE_WRITE);
     }
+
+    return !bloom_check_add32(bloom, hash, MODE_WRITE);
 }
 
 int bloom_add(struct bloom *bloom, const void *buffer, int len) {
